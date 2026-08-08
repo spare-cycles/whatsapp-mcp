@@ -13,7 +13,7 @@
 
 services:
   api:
-    image: ghcr.io/spare-cycles/whatsapp-mcp-api:latest
+    image: ghcr.io/spare-cycles/whatsapp-api:latest
     restart: unless-stopped
     volumes:
       # Unchanged path, unchanged contents: an existing deployment's volume mounts here as-is and
