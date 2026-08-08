@@ -301,3 +301,13 @@ them.
   `node smoke.mjs --transcribe <chat> <messageId>` after any change to either image, to the media
   pipeline, or after a `runpod-sync.py --apply`. ⚠️ It costs GPU seconds, and the first call of a
   quiet day pays the full cold start.
+
+- **A CVE in a *transitive* package cannot be fixed by `pnpm update <pkg> -r`, and the failure is
+  silent.** `pnpm update` only bumps packages some `package.json` declares, so against a dependency
+  no manifest of ours names it reports success and changes nothing (pnpm/pnpm#12744 — the same
+  reason Dependabot's own pnpm auto-fix PRs come up empty here, dependabot-core#13177). The lever is
+  an `overrides` entry in **`pnpm-workspace.yaml`**, alongside `packageExtensions`; the root
+  `package.json` has no `pnpm` block and adding one would split the same configuration across two
+  files. Prefer a caret to a bare `>=`: an override replaces the resolution outright rather than
+  intersecting with it, so an open range can satisfy the advisory and break a peer range at once.
+  `hono` is the worked example, with its own comment in that file.
