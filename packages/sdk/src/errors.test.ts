@@ -80,7 +80,9 @@ const LIVE_THROWS = [
     site: "whatsapp/recipient.ts:137",
     code: "ambiguous_recipient",
     name: "AmbiguousRecipientError",
-    message: '"ada" matches 3 chats or contacts; re-send with pick set to one of:\n  1. Ada Lovelace',
+    message:
+      '"ada" matches 3 chats or contacts; re-send addressed to the id printed beside the one you want, ' +
+      "not to the name:\n- Ada Lovelace · 1@s.whatsapp.net",
     ctor: AmbiguousRecipientError,
   },
   {
@@ -161,15 +163,8 @@ const LIVE_THROWS = [
     ctor: BadRequestError,
   },
   {
-    // The seven bare `new Error(...)` throws. Their name is the literal string "Error", and routing
+    // The six bare `new Error(...)` throws. Their name is the literal string "Error", and routing
     // them through a generic ApiError would silently turn `Error: …` into `ApiError: …`.
-    site: "whatsapp/recipient.ts:101",
-    code: "bad_request",
-    name: "Error",
-    message: "`pick` only applies when the recipient is named by name; it is not needed for a JID or number",
-    ctor: BadRequestError,
-  },
-  {
     site: "whatsapp/send.ts:261",
     code: "bad_request",
     name: "Error",

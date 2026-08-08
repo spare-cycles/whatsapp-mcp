@@ -205,21 +205,31 @@ export type MediaKeyframesQuery = z.infer<typeof MediaKeyframesQuery>;
  *
  * Deliberately more forgiving than the `:chat` path segment: the routes that take a message id got
  * their chat from a listing, while a send is the one place a caller starts from what a human said.
- * A name that matches several chats is refused with `ambiguous_recipient` and its numbered
- * candidates; `pick` settles it on the retry.
+ * A name that matches several chats is refused with `ambiguous_recipient` and its candidates, each
+ * carrying the `id` to re-send this same field as.
+ *
+ * **There is no positional companion field, and its absence is the contract.** A `pick: <n>` indexing
+ * the candidate list used to live here. The refusal and the retry are two requests, ingest rewrites
+ * `chats` and `contacts` in between, and a position therefore named a different human on the retry
+ * than in the refusal that offered it. An id names the row itself, so re-sending `recipient` is both
+ * the safe path and the only one. The two bodies below are `.strict()` for that reason and only that
+ * reason: these are the only routes that *lost* a field, and a body still carrying `pick` comes from
+ * a caller working to a contract that no longer holds. Stripping it — zod's default, and what every
+ * other body here still does — would discard a disambiguation without saying so.
  */
 const recipientShape = {
   recipient: z.string().min(1),
-  pick: z.number().int().positive().optional(),
 } as const;
 
 /** `POST /v1/messages`. */
-export const SendTextBody = z.object({
-  ...recipientShape,
-  text: z.string().min(1),
-  replyTo: z.string().min(1).optional(),
-  mentions: z.array(z.string().min(1)).optional(),
-});
+export const SendTextBody = z
+  .object({
+    ...recipientShape,
+    text: z.string().min(1),
+    replyTo: z.string().min(1).optional(),
+    mentions: z.array(z.string().min(1)).optional(),
+  })
+  .strict();
 
 export type SendTextBody = z.infer<typeof SendTextBody>;
 
@@ -231,18 +241,20 @@ export type SendTextBody = z.infer<typeof SendTextBody>;
  * both, and passing neither are different mistakes with different advice — which is what
  * `fileSource` does today and what a schema-level `invalid_union` could not say.
  */
-export const SendFileBody = z.object({
-  ...recipientShape,
-  /** The file's bytes, base64. */
-  data: z.string().min(1).optional(),
-  /** A file on the API host, under `WHATSAPP_SEND_FILE_DIR`. Refused unless that is configured. */
-  path: z.string().min(1).optional(),
-  filename: z.string().min(1).optional(),
-  mimetype: z.string().min(1).optional(),
-  caption: z.string().optional(),
-  replyTo: z.string().min(1).optional(),
-  asVoiceNote: z.boolean().optional(),
-});
+export const SendFileBody = z
+  .object({
+    ...recipientShape,
+    /** The file's bytes, base64. */
+    data: z.string().min(1).optional(),
+    /** A file on the API host, under `WHATSAPP_SEND_FILE_DIR`. Refused unless that is configured. */
+    path: z.string().min(1).optional(),
+    filename: z.string().min(1).optional(),
+    mimetype: z.string().min(1).optional(),
+    caption: z.string().optional(),
+    replyTo: z.string().min(1).optional(),
+    asVoiceNote: z.boolean().optional(),
+  })
+  .strict();
 
 export type SendFileBody = z.infer<typeof SendFileBody>;
 

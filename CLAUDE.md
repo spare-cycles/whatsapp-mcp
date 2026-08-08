@@ -182,18 +182,23 @@ them.
   reported ~$82/month. It persists through `meta`, so a restart does not reset the day —
   `budget.test.ts` asserts exactly that, because a cap a crash loop can clear is not a cap.
 
-- **An ambiguous recipient name is refused, never resolved by picking one.**
-  `whatsapp/recipient.ts` turns a JID, a phone number or a *name* into a chat id, and the whole point
-  of it is the refusal: two people called Marie is the ordinary case, and guessing sends a private
-  message to the wrong person. The refusal numbers the candidates and `pick` selects by that number,
-  so the candidate order must stay a total order over the data — sorting by anything a query happens
-  to return would make `pick: 2` mean a different person on the retry than in the refusal that
-  suggested it. An out-of-range `pick` is an error rather than a clamp, for the same reason.
+- **An ambiguous recipient name is refused, never resolved by picking one — and the retry is
+  addressed by id, never by position.** `whatsapp/recipient.ts` turns a JID, a phone number or a
+  *name* into a chat id, and the whole point of it is the refusal: two people called Marie is the
+  ordinary case, and guessing sends a private message to the wrong person. The refusal prints each
+  candidate's id and the caller re-sends `recipient` as one of them. It used to print numbers and
+  accept `pick: <n>`, which was a live bug: the refusal and the retry are two requests, ingest
+  rewrites `chats` and `contacts` in between (`contacts.upsert`, `linkIdentity`), so a position
+  named a different human on the retry than in the refusal that offered it — silently, reported as
+  a success. Ordering the candidates by a total order over the data made the numbering deterministic
+  given fixed data; it could not make the data fixed. **Do not reintroduce a positional selector.**
+  The candidate order is still a total order, but now only so one query reads the same way twice;
+  `details.candidates[].index` is presentation for a UI picker and nothing selects by it.
 
 - **`whatsapp/send.ts` must not name a local helper `resolve`.** `node:path`'s `resolve` is imported
   at the top of that file and used by `resolveSendPath`'s containment check; a `(string) => string`
   shadow inside `makeSender` type-checks perfectly and silently reroutes the path check. Hence
-  `resolveChat` (`send.ts:246`).
+  `resolveChat` (`send.ts:242`).
 
 - **Timestamps are integer Unix seconds, UTC, everywhere in the store.** `Number(m.messageTimestamp)`
   at the boundary, because protobuf may hand back a `Long` that fails silently in comparisons.
@@ -301,3 +306,13 @@ them.
   `node smoke.mjs --transcribe <chat> <messageId>` after any change to either image, to the media
   pipeline, or after a `runpod-sync.py --apply`. ⚠️ It costs GPU seconds, and the first call of a
   quiet day pays the full cold start.
+
+- **A CVE in a *transitive* package cannot be fixed by `pnpm update <pkg> -r`, and the failure is
+  silent.** `pnpm update` only bumps packages some `package.json` declares, so against a dependency
+  no manifest of ours names it reports success and changes nothing (pnpm/pnpm#12744 — the same
+  reason Dependabot's own pnpm auto-fix PRs come up empty here, dependabot-core#13177). The lever is
+  an `overrides` entry in **`pnpm-workspace.yaml`**, alongside `packageExtensions`; the root
+  `package.json` has no `pnpm` block and adding one would split the same configuration across two
+  files. Prefer a caret to a bare `>=`: an override replaces the resolution outright rather than
+  intersecting with it, so an open range can satisfy the advisory and break a peer range at once.
+  `hono` is the worked example, with its own comment in that file.

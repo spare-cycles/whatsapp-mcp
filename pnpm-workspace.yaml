@@ -8,3 +8,14 @@ packageExtensions:
     peerDependenciesMeta:
       sharp:
         optional: true
+
+# `hono` reaches us only transitively — `@modelcontextprotocol/sdk` depends on `^4.11.4` and
+# `@hono/node-server` peers on `^4`, and no manifest of ours names it. 4.12.33 carries four
+# advisories (GHSA-8j4g-w8fx-2239, GHSA-54fx-42gc-7vw4, GHSA-f23p-vx2j-j53r, GHSA-79qm-7rj5-m7r9),
+# all first fixed in 4.12.34. `pnpm update hono -r` cannot bump a package absent from every
+# `package.json` (pnpm/pnpm#12744), so the floor has to be an override. Caret, not `>=`: an
+# override replaces the resolution outright, so an open range would hoist a future hono 5 in
+# under `@hono/node-server`'s `^4` peer. Drop this once `@modelcontextprotocol/sdk` ships a
+# release whose own `hono` range starts at 4.12.34 or later.
+overrides:
+  hono: "^4.12.34"

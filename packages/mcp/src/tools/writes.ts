@@ -49,22 +49,24 @@ const chatSchema = z
  *
  * The four tools that also take a `message_id` got their chat from a listing, so a JID is the only
  * sensible thing to pass them. A send has no such provenance — it is the one place a caller starts
- * from what a human said — so it accepts a name too, and `pick` settles the ambiguity that follows.
+ * from what a human said — so it accepts a name too, and the refusal that follows an ambiguous name
+ * settles it by naming an id to re-send this same field as.
+ *
+ * **There is no `pick` companion, and this description is why it had to go.** A `pick: <n>` indexing
+ * the refusal's numbered list used to live here, and this text is what steered a model onto it. The
+ * refusal and the retry are two round trips, the API's store is rewritten by incoming WhatsApp
+ * traffic in between, and a position therefore named a different human on the retry than in the
+ * refusal that offered it — a private message to the wrong person, silently, reported as a success.
+ * The id in the refusal names the row itself, so it is the only handle a model is now given.
  */
 const recipientSchema = z
   .string()
   .min(1)
   .describe(
     "Who to send to: a chat JID from whatsapp_chats_list, a phone number, or a contact/group/chat name. " +
-      "An ambiguous name is refused with the matches listed; re-send with `pick` to choose one.",
+      "An ambiguous name is refused, listing each match with its id; re-send with this field set to the " +
+      "id of the one you want — never re-send the same name.",
   );
-
-const pickSchema = z
-  .number()
-  .int()
-  .positive()
-  .optional()
-  .describe("When the recipient name matched several chats or contacts, the 1-indexed one to use.");
 
 const messageIdSchema = z
   .string()
@@ -103,7 +105,6 @@ const DESTRUCTIVE_TOOL = { readOnlyHint: false, openWorldHint: true, destructive
  */
 const sendFileShape = {
   chat: recipientSchema,
-  pick: pickSchema,
   data: z
     .string()
     .min(1)
@@ -126,6 +127,38 @@ const sendFileShape = {
     .optional()
     .describe("Send audio as a push-to-talk voice note rather than as an audio file."),
 };
+
+/**
+ * The two sends refuse an argument they do not declare; the other twelve tools strip one.
+ *
+ * Zod objects strip unknown keys, and `validateToolInput` just `safeParse`s — so a caller that kept
+ * sending the `pick` these two tools used to take would have had it *silently dropped*, which is the
+ * one outcome removing `pick` was meant to rule out. It could no longer reach the wrong human (the
+ * API refuses the ambiguous name instead), but "your disambiguation was discarded" is not something
+ * a model should have to infer from a second refusal. `.strict()` says it.
+ *
+ * Only these two, and only because only these two *lost* a parameter: an unknown key here is a
+ * caller working from a contract that no longer holds, which is worth a hard error. Elsewhere it is
+ * just noise. The advertised JSON Schema does not move — `zodToJsonSchema` already emits
+ * `additionalProperties: false` for a plain object — so this changes what the server enforces, not
+ * what a client is told.
+ */
+const sendTextSchema = z
+  .object({
+    chat: recipientSchema,
+    text: z.string().min(1).describe("The message body. WhatsApp markdown (*bold*, _italic_) works."),
+    reply_to: replyToSchema,
+    mention: z
+      .array(z.string().min(1))
+      .optional()
+      .describe(
+        "Phone numbers or user JIDs to @mention. Write each one into `text` as @<number> too — " +
+          "this list only marks them, it does not insert them.",
+      ),
+  })
+  .strict();
+
+const sendFileSchema = z.object(sendFileShape).strict();
 
 /**
  * What a send answers with: where the message landed and what it is called.
@@ -176,26 +209,14 @@ export function registerWriteTools(server: McpServer, ctx: ToolContext): void {
         "Send a text message to a WhatsApp chat, optionally as a reply quoting an earlier message. " +
         "Needs a live connection: when the socket is down the call fails naming the connection state, " +
         "and the read tools keep working meanwhile.",
-      inputSchema: {
-        chat: recipientSchema,
-        text: z.string().min(1).describe("The message body. WhatsApp markdown (*bold*, _italic_) works."),
-        reply_to: replyToSchema,
-        pick: pickSchema,
-        mention: z
-          .array(z.string().min(1))
-          .optional()
-          .describe(
-            "Phone numbers or user JIDs to @mention. Write each one into `text` as @<number> too — " +
-              "this list only marks them, it does not insert them.",
-          ),
-      },
+      inputSchema: sendTextSchema,
       annotations: WRITE_TOOL,
     },
-    async ({ chat, text, reply_to, pick, mention }) =>
+    async ({ chat, text, reply_to, mention }) =>
       await guarded("whatsapp_send_text", ctx, async () =>
         sendResult(
           await ctx.client.sendText({
-            body: { recipient: chat, text, replyTo: reply_to, mentions: mention, pick },
+            body: { recipient: chat, text, replyTo: reply_to, mentions: mention },
           }),
           ctx,
         ),
@@ -209,7 +230,7 @@ export function registerWriteTools(server: McpServer, ctx: ToolContext): void {
         "Send an image, video, voice note or document to a WhatsApp chat. Give the bytes as base64 in " +
         "`data`; `path` reads a server-side file and works only when WHATSAPP_SEND_FILE_DIR is configured. " +
         "The type is taken from `mimetype`, else guessed from `filename`.",
-      inputSchema: sendFileShape,
+      inputSchema: sendFileSchema,
       annotations: WRITE_TOOL,
     },
     async (args) =>
@@ -225,7 +246,6 @@ export function registerWriteTools(server: McpServer, ctx: ToolContext): void {
               caption: args.caption,
               replyTo: args.reply_to,
               asVoiceNote: args.as_voice_note,
-              pick: args.pick,
             },
           }),
           ctx,

@@ -72,8 +72,10 @@ whether or not you have a word to search for. `kind` and `has_media` are refused
 (`kind: "text"` with `has_media: true`) rather than answered with an empty page, which would read as "there are none".
 
 **Naming a recipient.** `whatsapp_send_text` and `whatsapp_send_file` accept a chat JID, a phone number written any
-usual way, or a contact/group/chat name. A name matching several chats or contacts is **refused** with the matches
-listed and numbered — never resolved by guessing — and re-sending with `pick` set to one of those numbers chooses.
+usual way, or a contact/group/chat name. A name matching several chats or contacts is **refused** — never resolved by
+guessing — with every match listed beside its id, and re-sending with that id as the recipient chooses. The id rather
+than a position, because the refusal and the retry are two round trips and incoming WhatsApp traffic rewrites the
+store in between: a position could come to mean a different person before the retry landed.
 Every other tool takes the JID it was given by a listing, which it treats as an opaque string: all JID interpretation
 happens inside the API.
 
