@@ -135,7 +135,7 @@ void test("transcribe and resolveRecipient stay outside the gate, as they are to
 
 // --- recipients -------------------------------------------------------------------------------
 
-void test("an ambiguous recipient is refused with numbered candidates in the resolver's order", async (t) => {
+void test("an ambiguous recipient is refused with candidates carrying the id to retry with", async (t) => {
   const h = await start(t, {
     // The real resolver raises this from inside the sender; the stub raises the same class so the
     // handler's job — attaching the details — is what is under test.
@@ -158,6 +158,36 @@ void test("an ambiguous recipient is refused with numbered candidates in the res
     candidates.map((c) => c.label),
     ["Marie Curie", "Marie Dupont"],
   );
+  // The id is what the refusal tells the caller to re-send `recipient` as, so every candidate has
+  // to carry one: without it the only handle left on the wire is the position, which is the thing
+  // that raced. `index` stays for a UI to print, and nothing selects by it.
+  assert.deepEqual(
+    candidates.map((c) => c.id),
+    [FIXTURE_SELF, ALICE],
+  );
+});
+
+/**
+ * The other half of the same guarantee, at the other surface. `pick: <n>` chose a recipient by its
+ * position in the previous refusal's list; ingest rewrites `chats` and `contacts` between the two
+ * requests, so the position named a different human on the retry than in the refusal that offered
+ * it. Removing the field is not enough on its own — zod strips what it does not declare, so a stale
+ * caller's disambiguation would have vanished in silence. Both send bodies are `.strict()`.
+ */
+void test("a send still carrying the removed `pick` is refused, not quietly stripped of it", async (t) => {
+  const h = await start(t);
+
+  for (const [path, body] of [
+    ["/v1/messages", { recipient: "Marie", text: "hi", pick: 2 }],
+    ["/v1/messages/file", { recipient: "Marie", data: "aGk=", pick: 2 }],
+  ] as const) {
+    const res = await h.req(path, jsonBody(body));
+    assert.equal(res.status, 400, `${path} must refuse pick outright`);
+    const wire = (await res.json()) as WireErrorBody;
+    assert.equal(wire.error.code, "bad_request");
+    assert.match(wire.error.message, /pick/, "the refusal has to name the field it rejected");
+  }
+  assert.deepEqual(h.sendCalls, [], "nothing may be sent on a refused argument");
 });
 
 void test("resolveRecipient exposes the same list without sending anything", async (t) => {

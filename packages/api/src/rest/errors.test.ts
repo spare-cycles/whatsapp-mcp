@@ -109,11 +109,14 @@ const TABLE: readonly Row[] = [
   },
   {
     what: "AmbiguousRecipientError",
-    thrown: new AmbiguousRecipientError('"ada" matches 3 chats or contacts; re-send with pick set to one of:'),
+    thrown: new AmbiguousRecipientError(
+      '"ada" matches 3 chats or contacts; re-send addressed to the id printed beside the one you want, not to the name:',
+    ),
     code: "ambiguous_recipient",
     status: 409,
     name: "AmbiguousRecipientError",
-    message: '"ada" matches 3 chats or contacts; re-send with pick set to one of:',
+    message:
+      '"ada" matches 3 chats or contacts; re-send addressed to the id printed beside the one you want, not to the name:',
     ctor: SdkAmbiguousRecipientError,
   },
   {
@@ -409,15 +412,15 @@ void test("errorDetail survives a non-Error throw", () => {
   assert.equal(detail.stack, undefined);
 });
 
-// --- the conversion of the four bare throws -------------------------------------------------------
+// --- the conversion of the three bare throws ------------------------------------------------------
 
 void test("the converted bare throws render exactly as a bare Error did", () => {
-  // `whatsapp/send.ts` and `whatsapp/recipient.ts` used to throw `new Error(...)` at these four
-  // sites, and `describeError` renders `${name}: ${message}` straight into the model's context.
-  // `BadRequestError`'s `name` is the literal "Error" precisely so this stays true; demonstrating it
-  // is the condition the change was made under.
+  // `whatsapp/send.ts` used to throw `new Error(...)` at these three sites, and `describeError`
+  // renders `${name}: ${message}` straight into the model's context. `BadRequestError`'s `name` is
+  // the literal "Error" precisely so this stays true; demonstrating it is the condition the change
+  // was made under. A fourth site in `whatsapp/recipient.ts` refused a `pick` alongside a JID; it
+  // went with `pick` itself, so there is nothing left there to convert.
   for (const message of [
-    "`pick` only applies when the recipient is named by name; it is not needed for a JID or number",
     'cannot @mention "ada": a mention must be a phone number or a user JID, not a name',
     "file exceeds the maximum upload size (99 > 50 bytes)",
     "WhatsApp accepted the send to 1@s.whatsapp.net but returned no message id",

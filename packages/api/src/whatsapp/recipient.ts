@@ -11,17 +11,19 @@
  *
  * 1. **Ambiguity is refused, never guessed.** Two people named Marie is the normal case, and picking
  *    one sends a private message to the wrong person — the single most damaging thing this server can
- *    do. The refusal names the candidates so the caller can retry with `pick`, which is the same
- *    contract the old server's `--pick` had.
- * 2. **The order of candidates is stable.** `pick: 2` has to mean the same row on the retry as it did
- *    in the refusal that suggested it, so the list is sorted by a total order over the data rather
- *    than left in whatever sequence two queries happened to return.
+ *    do. The refusal names the candidates and prints each one's id.
+ * 2. **The retry is addressed by id, never by position.** The refusal and the retry are two separate
+ *    requests, and ingest writes `chats` and `contacts` continuously in between — a `contacts.upsert`
+ *    or a `linkIdentity` landing in that window inserts or collapses a row. A positional handle
+ *    (`pick: 2`, which this module used to accept) therefore named a *different human* on the retry
+ *    than in the refusal that offered it, silently and with a success response. Ordering the list by
+ *    a total order over the data made the numbering deterministic given fixed data; it could not make
+ *    the data fixed. An id is derived from the row rather than from the list, so nothing arriving in
+ *    the window can move it — which is why `pick` is gone rather than repaired.
  *
  * No JID is interpreted here (Global Constraint 11): `parseRecipient` and `canonicalId` in
  * `whatsapp/jid.ts` do that, and this module works with the opaque ids they return.
  */
-
-import { BadRequestError } from "whatsapp-api-sdk";
 
 import type { ChatsRepo } from "../db/chats.js";
 import type { ContactsRepo } from "../db/contacts.js";
@@ -29,12 +31,12 @@ import { canonicalId, parseRecipient } from "./jid.js";
 
 export type RecipientDeps = { chats: ChatsRepo; contacts: ContactsRepo };
 
-/** Nothing in the store answers to that name. Distinct from ambiguity: there is nothing to pick. */
+/** Nothing in the store answers to that name. Distinct from ambiguity: there is nothing to choose. */
 export class RecipientNotFoundError extends Error {
   override name = "RecipientNotFoundError";
 }
 
-/** Several chats or contacts answer to that name, and no `pick` said which. */
+/** Several chats or contacts answer to that name, so the caller must re-address the send to an id. */
 export class AmbiguousRecipientError extends Error {
   override name = "AmbiguousRecipientError";
 }
@@ -42,7 +44,13 @@ export class AmbiguousRecipientError extends Error {
 /** How many rows each of the two queries contributes before the merge. */
 const CANDIDATE_LIMIT = 25;
 
-/** How many candidates an ambiguity refusal names. Enough to choose from, short enough to read. */
+/**
+ * How many candidates an ambiguity refusal names. Enough to choose from, short enough to read.
+ *
+ * A hard limit on what is *offered*, now that every handle the refusal hands out is one it printed:
+ * beyond it the message says to narrow the name, and there is no longer an index that reaches past
+ * the cap into a row the caller was never shown.
+ */
 const LISTED_CANDIDATES = 10;
 
 export type RecipientCandidate = { id: string; label: string; exact: boolean };
@@ -61,10 +69,10 @@ export type RecipientCandidate = { id: string; label: string; exact: boolean };
  * exception here would be the thing a later change quietly relies on.
  *
  * Exported for `rest/handlers/writes.ts`, which needs the list itself rather than the one id
- * `resolveRecipient` picks from it: `POST /v1/recipients/resolve` answers with it, and an
+ * `resolveRecipient` chooses from it: `POST /v1/recipients/resolve` answers with it, and an
  * `ambiguous_recipient` refusal carries it as `details.candidates`. Re-deriving it there rather
- * than parsing it back out of the refusal message is what keeps the numbers a client is offered and
- * the numbers `pick` will index into the product of one function.
+ * than parsing it back out of the refusal message is what keeps the ids a client is offered and the
+ * ids the resolver will accept on the retry the product of one function.
  */
 export function candidatesFor(name: string, deps: RecipientDeps): RecipientCandidate[] {
   const wanted = name.toLowerCase();
@@ -81,40 +89,30 @@ export function candidatesFor(name: string, deps: RecipientDeps): RecipientCandi
   for (const contact of deps.contacts.search(name, CANDIDATE_LIMIT, 0)) add(contact.id, contact.name ?? contact.notify);
 
   // Exact matches first — "Marie" must not be ambiguous merely because "Marie-Claire" also matched
-  // the substring — then a total order on the data so `pick` means the same thing on every retry.
+  // the substring — then a total order on the data so the same query reads the same way twice.
   return [...byId.values()].sort(
     (a, b) => Number(b.exact) - Number(a.exact) || a.label.localeCompare(b.label) || a.id.localeCompare(b.id),
   );
 }
 
-/** Numbered `<n>) <label> · <chat id>` lines for a refusal, capped so the message stays readable. */
+/** `<label> · <chat id>` lines for a refusal, capped so the message stays readable. */
 function describeCandidates(candidates: readonly RecipientCandidate[]): string {
-  const shown = candidates.slice(0, LISTED_CANDIDATES).map((c, i) => `${String(i + 1)}) ${c.label} · ${c.id}`);
+  const shown = candidates.slice(0, LISTED_CANDIDATES).map((c) => `- ${c.label} · ${c.id}`);
   const rest = candidates.length - shown.length;
-  return shown.join("\n") + (rest > 0 ? `\n… and ${String(rest)} more; narrow the name instead of picking` : "");
+  return shown.join("\n") + (rest > 0 ? `\n… and ${String(rest)} more; narrow the name instead` : "");
 }
 
 /**
  * The chat id to send to.
  *
- * A JID or a phone number resolves without touching the store. A name is looked up, and `pick`
- * — 1-indexed, as the refusal numbers them — selects among several. An out-of-range `pick` is an
- * error rather than a clamp: clamping would send to the last candidate whenever the list shrank
- * between the refusal and the retry.
+ * A JID or a phone number resolves without touching the store; a name is looked up. There is no
+ * positional argument to disambiguate with, deliberately: the caller re-addresses the send to one of
+ * the ids the refusal printed, which is the same argument and a handle that cannot come to mean
+ * someone else between the two requests. See rule 2 at the top of this file.
  */
-export function resolveRecipient(to: string, pick: number | undefined, deps: RecipientDeps): string {
+export function resolveRecipient(to: string, deps: RecipientDeps): string {
   const form = parseRecipient(to);
-  if (form.kind !== "name") {
-    if (pick !== undefined) {
-      // `BadRequestError`, not a bare `Error`: over HTTP this has to answer 400 rather than 500, and
-      // the SDK class carries the `name` `"Error"` precisely so the model-visible rendering — which
-      // `describeError` builds from `name` and `message` — does not move. See `CODE_SPEC`.
-      throw new BadRequestError(
-        "`pick` only applies when the recipient is named by name; it is not needed for a JID or number",
-      );
-    }
-    return canonicalId(form.jid, deps.contacts);
-  }
+  if (form.kind !== "name") return canonicalId(form.jid, deps.contacts);
 
   const name = to.trim();
   const candidates = candidatesFor(name, deps);
@@ -123,17 +121,6 @@ export function resolveRecipient(to: string, pick: number | undefined, deps: Rec
       `no chat, group or contact is named "${name}" — search with whatsapp_contacts_search or whatsapp_chats_list, ` +
         "or give a JID or phone number",
     );
-  }
-
-  if (pick !== undefined) {
-    const chosen = candidates[pick - 1];
-    if (chosen === undefined) {
-      throw new RecipientNotFoundError(
-        `pick=${String(pick)} is out of range: "${name}" matches ${String(candidates.length)}:\n` +
-          describeCandidates(candidates),
-      );
-    }
-    return chosen.id;
   }
 
   const first = candidates[0];
@@ -148,7 +135,7 @@ export function resolveRecipient(to: string, pick: number | undefined, deps: Rec
   }
 
   throw new AmbiguousRecipientError(
-    `"${name}" matches ${String(candidates.length)} chats or contacts; re-send with pick set to one of:\n` +
-      describeCandidates(candidates),
+    `"${name}" matches ${String(candidates.length)} chats or contacts; re-send addressed to the id printed ` +
+      `beside the one you want, not to the name:\n${describeCandidates(candidates)}`,
   );
 }

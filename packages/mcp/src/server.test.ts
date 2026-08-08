@@ -376,7 +376,6 @@ void test("whatsapp_send_file passes every argument through to the API under the
         caption: "listen",
         replyTo: "M7",
         asVoiceNote: true,
-        pick: undefined,
       },
     });
 
@@ -387,13 +386,14 @@ void test("whatsapp_send_file passes every argument through to the API under the
 
     await h.client.callTool({ name: "whatsapp_send_text", arguments: { chat: CHAT, text: "hi", reply_to: "M7" } });
     assert.deepEqual(h.api.inputOf("sendText"), {
-      body: { recipient: CHAT, text: "hi", replyTo: "M7", mentions: undefined, pick: undefined },
+      body: { recipient: CHAT, text: "hi", replyTo: "M7", mentions: undefined },
     });
 
-    // `mention` and `pick` reach the API under their own names too.
+    // `mention` reaches the API under its own name too. There is no `pick` beside it any more: the
+    // retry after an ambiguity refusal is the same `chat` field set to the id the refusal printed.
     await h.client.callTool({
       name: "whatsapp_send_text",
-      arguments: { chat: "Marie", text: "@33611111111 coucou", pick: 2, mention: ["33611111111"] },
+      arguments: { chat: "Marie", text: "@33611111111 coucou", mention: ["33611111111"] },
     });
     assert.deepEqual(h.api.inputOf("sendText", 1), {
       body: {
@@ -401,9 +401,44 @@ void test("whatsapp_send_file passes every argument through to the API under the
         text: "@33611111111 coucou",
         replyTo: undefined,
         mentions: ["33611111111"],
-        pick: 2,
       },
     });
+  } finally {
+    await h.close();
+  }
+});
+
+/**
+ * `pick: <n>` selected a recipient by its position in the previous refusal's numbered list. The
+ * refusal and the retry are two round trips and the API's store is rewritten by incoming WhatsApp
+ * traffic in between, so the position named a different human on the retry than in the refusal that
+ * offered it — a private message to the wrong person, reported as a success. It is gone, and its
+ * absence has to be *loud*: a zod object strips unknown keys by default, which would have made a
+ * stale caller's disambiguation vanish without a word.
+ */
+void test("the two sends refuse the `pick` they used to take, rather than dropping it", async () => {
+  const h = await harness({});
+  try {
+    const tools = await h.client.listTools();
+    for (const name of ["whatsapp_send_text", "whatsapp_send_file"]) {
+      const tool = tools.tools.find((t) => t.name === name);
+      assert.ok(tool, `${name} must be advertised`);
+      assert.equal("pick" in (tool.inputSchema.properties ?? {}), false, `${name} must not advertise pick`);
+      // The description is what steers a model's retry, so it has to name the id, not a number.
+      const chat = (tool.inputSchema.properties as Record<string, { description?: string }>)["chat"];
+      assert.match(chat?.description ?? "", /re-send with this field set to the id/);
+
+      const res = await h.client.callTool({
+        name,
+        arguments:
+          name === "whatsapp_send_text"
+            ? { chat: "Marie", text: "hi", pick: 2 }
+            : { chat: "Marie", data: "aGk=", pick: 2 },
+      });
+      assert.equal(res.isError, true, `${name} must refuse pick outright`);
+      assert.match(resultText(res), /Unrecognized key\(s\) in object: 'pick'/);
+    }
+    assert.equal(h.api.calls.length, 0, "nothing may reach the API on a refused argument");
   } finally {
     await h.close();
   }

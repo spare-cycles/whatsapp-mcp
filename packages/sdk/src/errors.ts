@@ -219,7 +219,7 @@ export class RecipientNotFoundError extends ApiError {
   }
 }
 
-/** Carries `details.candidates`: the numbered list the refusal asks the caller to `pick` from. */
+/** Carries `details.candidates`: the matches, each with the `id` to re-send `recipient` as. */
 export class AmbiguousRecipientError extends ApiError {
   constructor(message: string, options: ApiErrorOptions = {}) {
     super("ambiguous_recipient", message, options);

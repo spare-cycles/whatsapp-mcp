@@ -167,10 +167,10 @@ export type SendResult = z.infer<typeof SendResult>;
 /**
  * One chat or contact a recipient name matched.
  *
- * `index` is 1-based and exists only on the wire: in-process the position in the array *is* the
- * number, but across HTTP a client that re-sorted or filtered the list would renumber it, and `pick`
- * selects by number. Sending the number the refusal used removes the possibility that a retry means
- * a different person than the refusal offered (Global Constraint 11).
+ * `id` is the handle: it is what an `ambiguous_recipient` refusal tells the caller to re-send
+ * `recipient` as, and it names the row rather than its place in a list that ingest rewrites between
+ * two requests. `index` is 1-based and is presentation only — the ordinal a UI prints beside a row
+ * in the picker `POST /v1/recipients/resolve` feeds. Nothing selects by it (Global Constraint 11).
  */
 export const RecipientCandidate = z.object({
   index: z.number().int().positive(),

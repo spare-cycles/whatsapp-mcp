@@ -57,16 +57,12 @@ export type SendFileOptions = {
   caption?: string | undefined;
   replyTo?: string | undefined;
   asVoiceNote?: boolean | undefined;
-  /** Disambiguates a recipient named by name; see `whatsapp/recipient.ts`. */
-  pick?: number | undefined;
 };
 
 export type SendTextOptions = {
   replyTo?: string | undefined;
   /** JIDs or phone numbers to @mention. The text must also carry each one as `@<number>`. */
   mentions?: readonly string[] | undefined;
-  /** Disambiguates a recipient named by name; see `whatsapp/recipient.ts`. */
-  pick?: number | undefined;
 };
 
 /**
@@ -235,16 +231,16 @@ export function makeSender(deps: SendDeps): Sender {
    * The chat id an operation acts on, from whatever the caller called it.
    *
    * Every method below goes through this, so a JID, a phone number and a name all reach the same
-   * row. `pick` is only ever passed by the two sends — the four operations that also take a message
-   * id already got their chat from a listing, so there is nothing there to disambiguate.
+   * row. An ambiguous name is refused here rather than guessed, and the refusal names the id to
+   * re-address the send to; see `whatsapp/recipient.ts`.
    *
    * Named `resolveChat` and not `resolve`: `node:path`'s `resolve` is imported at the top of this
    * file and used by `resolveSendPath`, and a same-arity shadow of it inside this closure would have
    * silently rerouted the path-containment check through a chat lookup — which type-checks, because
    * both are `(string) => string`.
    */
-  function resolveChat(chat: string, pick?: number): string {
-    return resolveRecipient(chat, pick, { chats, contacts });
+  function resolveChat(chat: string): string {
+    return resolveRecipient(chat, { chats, contacts });
   }
 
   /**
@@ -413,7 +409,7 @@ export function makeSender(deps: SendDeps): Sender {
   }
 
   async function sendText(chat: string, text: string, opts: SendTextOptions = {}): Promise<SendRef> {
-    const jid = resolveChat(chat, opts.pick);
+    const jid = resolveChat(chat);
     const sock = conn.requireSocket();
     // Both are resolved before the socket sends anything: a bad mention is a refusal, and refusing
     // after the message is on its way is not a refusal at all.
@@ -424,7 +420,7 @@ export function makeSender(deps: SendDeps): Sender {
   }
 
   async function sendFile(chat: string, src: FileSource, opts: SendFileOptions): Promise<SendRef> {
-    const jid = resolveChat(chat, opts.pick);
+    const jid = resolveChat(chat);
     const sock = conn.requireSocket();
     // The quote is resolved before the bytes are, matching `sendText`: an unknown or revoked
     // `replyTo` is a refusal either way, and this way it costs no decode and no read of up to

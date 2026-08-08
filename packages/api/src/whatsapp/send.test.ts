@@ -267,9 +267,10 @@ void test("an ambiguous name is refused before the socket is touched at all", as
   });
   await assert.rejects(() => h.sender.sendText("Marie", "salut"), /matches 2/);
   assert.equal(h.calls.length, 0, "nothing may be sent while the recipient is in doubt");
-  // `pick` is what resolves it, and it selects by the order the refusal printed.
-  await h.sender.sendText("Marie", "salut", { pick: 1 });
-  assert.equal(h.calls[0]?.jid, SELF, "1) Marie Curie sorts before 2) Marie Dupont");
+  // Re-addressing the send to the id the refusal printed is what resolves it — and unlike the
+  // position it used to print, that id cannot come to mean someone else before the retry lands.
+  await h.sender.sendText(SELF, "salut");
+  assert.equal(h.calls[0]?.jid, SELF);
 });
 
 void test("sendText marks mentions, resolving each to a user JID", async () => {
@@ -291,7 +292,7 @@ void test("a mention that is a name rather than a number is refused, and sends n
   assert.equal(h.calls.length, 0);
 });
 
-void test("sendFile takes a name and a pick too", async () => {
+void test("sendFile takes a name as well as a JID", async () => {
   const h = harness({ named: [{ id: DM, name: "Marie" }] });
   await h.sender.sendFile("Marie", { kind: "data", base64: b64("hi") }, { filename: "a.txt" });
   assert.equal(h.calls[0]?.jid, DM);

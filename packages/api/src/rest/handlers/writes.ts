@@ -11,11 +11,11 @@
  * a read-only deployment, and resolving a recipient sends nothing at all.
  *
  * **An ambiguous recipient is refused, never guessed.** `whatsapp/recipient.ts` does the refusing;
- * what this layer adds is the machine-readable half — `details.candidates`, 1-based, in the
- * resolver's own total order, so `pick: 2` on the retry means the row the refusal numbered 2
- * (Global Constraint 11). The candidates are re-derived from `candidatesFor` rather than parsed out
- * of the message, so the list a client reads and the list the resolver will index into on the retry
- * are produced by one function.
+ * what this layer adds is the machine-readable half — `details.candidates`, each carrying the `id`
+ * the refusal tells the caller to re-send `recipient` as, in the resolver's own total order (Global
+ * Constraint 11). The candidates are re-derived from `candidatesFor` rather than parsed out of the
+ * message, so the ids a client reads and the ids the resolver will accept on the retry are produced
+ * by one function.
  *
  * **`react`'s `emoji` takes no `.min(1)`, on the wire schema or here.** An empty string is how
  * WhatsApp models *removing* a reaction; the obvious improvement deletes the removal path.
@@ -83,7 +83,7 @@ export function writeHandlers(deps: RestDeps): WriteHandlers {
   };
 
   /**
-   * Every chat or contact a recipient string matches, numbered the way `pick` counts.
+   * Every chat or contact a recipient string matches, each with the id to re-address a send to.
    *
    * A JID or a phone number resolves without touching the store, exactly as `resolveRecipient`
    * does, and answers with the one candidate it is — so `POST /v1/recipients/resolve` is useful for
@@ -96,7 +96,7 @@ export function writeHandlers(deps: RestDeps): WriteHandlers {
       return [{ index: 1, id, label: contacts.displayName(id), exact: true }];
     }
     // `.trim()` because `resolveRecipient` looks the name up trimmed: an untrimmed lookup here
-    // would number a different list than the one `pick` will index into.
+    // would describe a different list than the one the retry will be checked against.
     return candidatesFor(recipient.trim(), { chats, contacts }).map((candidate, i) => ({
       index: i + 1,
       id: candidate.id,
@@ -126,7 +126,7 @@ export function writeHandlers(deps: RestDeps): WriteHandlers {
   return {
     sendText: ({ body }) => {
       requireWritable();
-      const options: SendTextOptions = { replyTo: body.replyTo, mentions: body.mentions, pick: body.pick };
+      const options: SendTextOptions = { replyTo: body.replyTo, mentions: body.mentions };
       return sending(body.recipient, async () => {
         const ref = await sender.sendText(body.recipient, body.text, options);
         return { chat: ref.chatId, messageId: ref.messageId };
@@ -148,7 +148,6 @@ export function writeHandlers(deps: RestDeps): WriteHandlers {
         caption: body.caption,
         replyTo: body.replyTo,
         asVoiceNote: body.asVoiceNote,
-        pick: body.pick,
       };
       return sending(body.recipient, async () => {
         const ref = await sender.sendFile(body.recipient, source, options);
@@ -158,8 +157,8 @@ export function writeHandlers(deps: RestDeps): WriteHandlers {
 
     /**
      * The five routes below take a chat and a message id that came from a listing, so there is
-     * nothing to disambiguate and no `pick`: each answers with the chat the sender really acted on
-     * — a LID and its phone JID are one conversation — rather than echoing what the caller typed.
+     * nothing to disambiguate: each answers with the chat the sender really acted on — a LID and its
+     * phone JID are one conversation — rather than echoing what the caller typed.
      */
     editMessage: async ({ params, body }) => {
       requireWritable();
