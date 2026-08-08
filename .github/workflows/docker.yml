@@ -3,12 +3,20 @@ name: build-image
 # Build and push the two container images to GHCR.
 #
 # `whatsapp-mcp` used to be one image containing the whole server. It is now two:
-#   - ghcr.io/<repo>-api  — Baileys, the store, the media pipeline, the REST surface. Stateful.
-#   - ghcr.io/<repo>      — the MCP surface alone. Stateless.
+#   - ghcr.io/<owner>/whatsapp-api  — Baileys, the store, the media pipeline, the REST surface.
+#                                     Stateful.
+#   - ghcr.io/<owner>/whatsapp-mcp  — the MCP surface alone. Stateless.
 #
-# The MCP keeps the unsuffixed name because it is what an MCP client is configured against, and
-# renaming it would break every existing client config for no gain. The API is the new artefact, so
-# it takes the new name.
+# Neither name is derived from the other, and that is the point. The API serves WhatsApp over HTTP
+# to anything that speaks HTTP — a web UI, a cron job, another service; the MCP is merely its first
+# consumer. Naming it after the MCP would encode a dependency that runs the wrong way and would
+# quietly tell an operator the API is an MCP implementation detail.
+#
+# The MCP keeps the unsuffixed repository name because it is what an MCP client is configured
+# against, and renaming it would break every existing client config for no gain.
+#
+# Both are therefore spelled against `github.repository_owner` rather than `github.repository`:
+# the image names are a deliberate choice, not a function of what this repo happens to be called.
 #
 # Tags: a semver tag push (v1.2.3) -> :1.2.3 + :latest; any main push -> :main + :sha-<short>.
 on:
@@ -52,10 +60,10 @@ jobs:
         include:
           - package: api
             file: packages/api/Dockerfile
-            image: ghcr.io/${{ github.repository }}-api
+            image: ghcr.io/${{ github.repository_owner }}/whatsapp-api
           - package: mcp
             file: packages/mcp/Dockerfile
-            image: ghcr.io/${{ github.repository }}
+            image: ghcr.io/${{ github.repository_owner }}/whatsapp-mcp
     steps:
       - uses: actions/checkout@v4
 

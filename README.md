@@ -313,8 +313,10 @@ docker build -f packages/api/Dockerfile -t whatsapp-api:latest .
 docker build -f packages/mcp/Dockerfile -t whatsapp-mcp:latest .
 ```
 
-`ghcr.io/spare-cycles/whatsapp-mcp-api` and `ghcr.io/spare-cycles/whatsapp-mcp` are what
+`ghcr.io/spare-cycles/whatsapp-api` and `ghcr.io/spare-cycles/whatsapp-mcp` are what
 `.github/workflows/docker.yml` publishes, from one matrix, gated on the same `check` job. amd64 only.
+Neither name is derived from the other: the API serves WhatsApp over HTTP to anything that speaks HTTP,
+and the MCP is only its first consumer.
 
 The API image adds ffmpeg, poppler-utils and ca-certificates, sets `WHATSAPP_DATA_DIR=/data/whatsapp` and `PORT=8080`,
 and creates `/data/whatsapp` owned by `node`. The MCP image installs no system package at all. Both run as the
@@ -333,7 +335,7 @@ without re-pairing the account from a phone. Read this before changing anything.
    `/data/whatsapp` path. Same contents, same schema, same credentials; the store migrates itself forward on boot. Do
    not attach it to the mcp container — that process opens no database, and a volume mounted there does nothing.
 2. **The old image tag is superseded by two.** There is no single-container image any more and no combined tag. Pull
-   `…/whatsapp-mcp-api` and `…/whatsapp-mcp` and run both.
+   `…/whatsapp-api` and `…/whatsapp-mcp` and run both.
 3. **Generate a new `WHATSAPP_API_TOKEN` and give it to both containers.** It did not exist before the split. Without
    it the API answers 401 to every `/v1` request and the MCP can do nothing; with different values on the two
    containers, the same. `openssl rand -hex 32`.
