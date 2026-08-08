@@ -10,10 +10,16 @@
 #   docker compose logs -f api        # the first run prints a pairing code
 #
 # Point an MCP client at http://localhost:8081/mcp with `Authorization: Bearer $WHATSAPP_MCP_TOKEN`.
+#
+# Both images are pinned to `:main`, the rolling tag every push to the default branch publishes.
+# **`:latest` is deliberately not used here and would not resolve**: `.github/workflows/docker.yml`
+# emits `latest` only for a semver tag push, and this project has published no release since the
+# split. Pin a `:sha-<short>` or a version tag for anything you actually depend on - `:main` moves
+# under you, which is the right default for a file whose job is to demonstrate the topology.
 
 services:
   api:
-    image: ghcr.io/spare-cycles/whatsapp-api:latest
+    image: ghcr.io/spare-cycles/whatsapp-api:main
     restart: unless-stopped
     volumes:
       # Unchanged path, unchanged contents: an existing deployment's volume mounts here as-is and
@@ -32,7 +38,7 @@ services:
     expose: ["8080"]
 
   mcp:
-    image: ghcr.io/spare-cycles/whatsapp-mcp:latest
+    image: ghcr.io/spare-cycles/whatsapp-mcp:main
     restart: unless-stopped
     depends_on:
       api:
