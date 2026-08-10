@@ -33,7 +33,7 @@ read-only deployment does not advertise them and a model never sees an ability i
 
 | Tool | What it does | Needs the WhatsApp connection |
 | --- | --- | --- |
-| `whatsapp_health` | Connection state, whether pairing is needed, seconds since the last socket event, row counts, schema version, whether transcription can run. | no |
+| `whatsapp_health` | Connection state, whether pairing is needed, row counts, schema version, whether transcription can run. Explains that `last_event_age_sec` measures the last connection *state change* and that `last_message_at` is the field to compare against your own cursor. | no |
 | `whatsapp_chats_list` | Chats — direct and group — most recently active first, with unread counts, archive and mute state. Filterable by name, group flag, archived, unread. | no |
 | `whatsapp_groups_list` | Group chats only, with participant counts. | no |
 | `whatsapp_messages_list` | Stored messages, newest first — or oldest first with `asc`. Sender names resolved from contacts, reaction counts attached. | no |
@@ -263,13 +263,17 @@ No token — `WHATSAPP_API_TOKEN`, `WHATSAPP_MCP_TOKEN`, `NTFY_TOKEN` — appear
 rather than a spread of the config, so a new config field can never widen it by accident.
 
 **`last_event_age_sec` and `last_message_at` measure different things, and only the second one detects a frozen
-store.** `last_event_age_sec` is the age of the last `connection.update` — the socket's opinion of itself — so it stays
-small on a connection that is answering while receiving nothing. `last_message_at` is `MAX(ts)` over the store, the one
-value that separates "healthy and quiet" from "connected and ingesting nothing". Nothing inside the API decides which
-of those it is, because *quiet* is a property of the conversation and not of the server; that judgement belongs to a
-watchdog outside the process, with its own clock and its own threshold. The API's `/health` answers `200` in every
-connection state, so a probe pointed at it detects a dead HTTP server and nothing more — deliberately, since read
-tools keep working while disconnected and a reconnect must not flap the container.
+store.** `last_event_age_sec` is the age of the last `connection.update` — the socket's opinion of itself. Since
+`connection.update` fires on a state *transition* and on nothing else, a socket that stays connected never touches it:
+on a healthy long-lived connection the value grows without bound, and a server that has been up and ingesting for two
+days reports an age of two days. It is not a freshness signal, and read as one it says "dead" about the healthiest
+possible state. `last_message_at` is `MAX(ts)` over the store, the one value that separates "healthy and quiet" from
+"connected and ingesting nothing" — compared against a caller's own cursor, since two readings at the same value are
+what distinguishes them. Nothing inside the API decides which of those it is, because *quiet* is a property of the
+conversation and not of the server; that judgement belongs to a watchdog outside the process, with its own clock and
+its own threshold. The API's `/health` answers `200` in every connection state, so a probe pointed at it detects a dead
+HTTP server and nothing more — deliberately, since read tools keep working while disconnected and a reconnect must not
+flap the container.
 
 ## Running it from source
 

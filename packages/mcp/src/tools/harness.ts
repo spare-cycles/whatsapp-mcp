@@ -123,7 +123,7 @@ export type HarnessOptions = {
   /** What `GET /v1/capabilities` reports. Eight tools when true, fourteen when false. */
   readOnly?: boolean | undefined;
   state?: ConnectionState | undefined;
-  /** Seconds since the API's connection last saw an event. Its health report carries it. */
+  /** Seconds since the API's last connection *state change*. Its health report carries it verbatim. */
   lastEventAgeSec?: number | undefined;
   transcriptionAvailable?: boolean | undefined;
   /** Overrides `WHATSAPP_MCP_MAX_RESULT_CHARS`, which is what the truncation tests turn down. */

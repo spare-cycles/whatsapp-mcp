@@ -200,6 +200,15 @@ export const HealthReport = z.object({
   ok: z.boolean(),
   connection: z.enum(CONNECTION_STATES),
   needs_pairing: z.boolean(),
+  /**
+   * Age of the last **connection state change**, not of the last message received.
+   *
+   * `connection.update` is the only thing that moves it, and Baileys fires that on a transition
+   * alone — so a socket that stays connected never touches it and this grows without bound. A
+   * server up and ingesting normally for two days reports two days, which reads as maximally stale
+   * while being the healthiest state there is. It is the socket's opinion of itself and nothing
+   * more; `last_message_at` is the only ingestion signal in this record.
+   */
   last_event_age_sec: z.number().int(),
   last_connected_at: epochSeconds.nullable(),
   last_message_at: epochSeconds.nullable(),
