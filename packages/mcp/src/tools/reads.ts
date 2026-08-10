@@ -105,9 +105,13 @@ export function registerReadTools(server: McpServer, ctx: ToolContext): void {
     "whatsapp_health",
     {
       description:
-        "WhatsApp server health: connection state, whether pairing is needed, seconds since the last socket " +
-        `event, row counts in the local store, schema version, and whether transcription can run. ${OFFLINE} ` +
-        "`ok` is false only when the account has been logged out, which needs a human to re-pair.",
+        "WhatsApp server health: connection state, whether pairing is needed, row counts in the local store, " +
+        `schema version, and whether transcription can run. ${OFFLINE} ` +
+        "`ok` is false only when the account has been logged out, which needs a human to re-pair. " +
+        "`last_event_age_sec` is the age of the last connection *state change*, never of the last message " +
+        "received: it grows without bound on a healthy long-lived connection, so a value of hours or days is " +
+        "normal and is not evidence of a stalled server. To tell a quiet chat from a frozen store, compare " +
+        "`last_message_at` against your own cursor instead.",
       inputSchema: {},
       annotations: READ_ONLY_TOOL,
     },
