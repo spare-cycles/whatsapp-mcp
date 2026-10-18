@@ -443,7 +443,7 @@ void test("the socket announces a browser WhatsApp accepts for pairing codes (up
   );
 });
 
-type TestCreds = { registered: boolean; me?: { id: string } | undefined };
+type TestCreds = { registered: boolean; me?: { id: string } | undefined; account?: object };
 
 function authSpy(creds: TestCreds) {
   const calls = { cleared: 0 };
@@ -479,4 +479,14 @@ void test("a genuinely paired identity is never discarded on socket creation", a
   const c = makeConnection(d);
   await c.start();
   assert.equal(calls.cleared, 0, "wiping a registered session would unpair the device on every reconnect");
+});
+
+void test("a QR-paired identity (creds.account, registered still false) survives the post-pairing restart", async () => {
+  // pair-success writes creds.account but never creds.registered; WhatsApp then closes with 515 and
+  // the next socket must log in with that identity, not wipe it and fall back to registration.
+  const { calls, auth } = authSpy({ registered: false, me: { id: "33612345678@s.whatsapp.net" }, account: {} });
+  const { deps: d } = deps({ auth } as unknown as Partial<ConnectionDeps>);
+  const c = makeConnection(d);
+  await c.start();
+  assert.equal(calls.cleared, 0, "wiping here unlinks the device the user just scanned");
 });
