@@ -1,6 +1,10 @@
 import { strict as assert } from "node:assert";
 import { EventEmitter } from "node:events";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
+import { setImmediate as tick } from "node:timers/promises";
 import type { Config } from "../config.js";
 import { backoffMs, ConnectionUnavailableError, makeConnection, type ConnectionDeps } from "./connection.js";
 
@@ -153,6 +157,36 @@ void test("a pairing code is requested exactly once per socket", async () => {
   firstSocket(sockets).emit("connection.update", { qr: "b" });
   await new Promise((r) => setImmediate(r));
   assert.equal(calls, 1, "a rotating QR must not spam requestPairingCode");
+});
+
+void test("WHATSAPP_QR_FILE pairs by QR: latest payload in a 0600 file, no code requested, file gone on open", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qr-"));
+  const qrFile = join(dir, "qr");
+  let calls = 0;
+  const { deps: d, sockets } = deps({}, { qrFile });
+  const c = makeConnection({
+    ...d,
+    makeSocket: () => {
+      const s = fakeSocket();
+      s.requestPairingCode = () => {
+        calls++;
+        return Promise.resolve("ABCD1234");
+      };
+      sockets.push(s);
+      return s;
+    },
+  } as unknown as ConnectionDeps);
+  await c.start();
+  firstSocket(sockets).emit("connection.update", { qr: "a" });
+  firstSocket(sockets).emit("connection.update", { qr: "b" });
+  await tick();
+  assert.equal(calls, 0, "QR mode must never hit the rate-limited code request");
+  assert.equal(c.snapshot().state, "pairing");
+  assert.equal(readFileSync(qrFile, "utf8"), "b", "the file must hold the current QR, not the first");
+  assert.equal(statSync(qrFile).mode & 0o777, 0o600);
+  firstSocket(sockets).emit("connection.update", { connection: "open" });
+  assert.equal(existsSync(qrFile), false, "a spent QR must not outlive pairing");
+  rmSync(dir, { recursive: true });
 });
 
 void test("a qr with no WHATSAPP_PHONE_NUMBER logs an error once per socket, never the qr payload", async () => {

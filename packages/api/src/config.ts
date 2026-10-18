@@ -51,6 +51,9 @@ export type Config = {
   dbPath: string; // `${dataDir}/whatsapp.db`
   mediaDir: string; // WHATSAPP_MEDIA_DIR, default `${dataDir}/media`
   phoneNumber: string | undefined; // WHATSAPP_PHONE_NUMBER, digits only, 8..15
+  /** WHATSAPP_QR_FILE — set, pair by QR: the live payload is written here (0600) instead of
+   * requesting a code. For when WhatsApp answers the code request `429 rate-overlimit`. */
+  qrFile: string | undefined;
   port: number; // PORT, default 8080, clamped [1, 65535]
   /**
    * WHATSAPP_API_TOKEN — the bearer the REST surface's `/v1` gate compares against.
@@ -223,6 +226,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     dbPath: `${dataDir}/whatsapp.db`,
     mediaDir: env["WHATSAPP_MEDIA_DIR"] || `${dataDir}/media`,
     phoneNumber: parsePhoneNumber(env["WHATSAPP_PHONE_NUMBER"]),
+    qrFile: env["WHATSAPP_QR_FILE"] || undefined,
     port: envInt(env["PORT"], 8080, 1, 65535),
     // `|| undefined`, so an empty string is absent: `WHATSAPP_API_TOKEN=` in a compose file is a
     // variable someone meant to fill in, and treating it as a token would gate `/v1` behind the
