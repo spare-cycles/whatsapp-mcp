@@ -20,7 +20,7 @@
  */
 
 import { pathToFileURL } from "node:url";
-import type { WAMessageKey } from "baileys";
+import { fetchLatestWaWebVersion, type WAMessageKey } from "baileys";
 import type { Logger } from "pino";
 import type { Handlers } from "whatsapp-api-sdk";
 import { makeAlerter, type Alerter } from "./alerts.js";
@@ -172,7 +172,13 @@ export async function bootstrap(): Promise<void> {
     selfId,
     onVoiceNotes: (notes) => autoTranscriber?.enqueue(notes),
   });
-  const conn = makeConnection({ config, logger, auth, loadMessage, onSocket: ingest.attach });
+  // ponytail: fetched once per boot, so a pod that outlives a WhatsApp Web release drifts stale
+  // again; a restart refreshes it. Fetch inside createSocket if that ever bites. On any failure
+  // Baileys returns its bundled version, which is what we sent before.
+  const wa = await fetchLatestWaWebVersion({ signal: AbortSignal.timeout(10_000) });
+  if (wa.isLatest) logger.info({ version: wa.version }, "whatsapp: advertising live WhatsApp Web version");
+  else logger.warn({ version: wa.version, err: wa.error }, "whatsapp: live version fetch failed, using bundled");
+  const conn = makeConnection({ config, logger, auth, loadMessage, onSocket: ingest.attach, version: wa.version });
   live = conn;
 
   const sender = makeSender({

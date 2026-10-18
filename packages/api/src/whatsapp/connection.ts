@@ -5,6 +5,7 @@ import {
   proto,
   type ConnectionState as BaileysConnectionState,
   type WAMessageKey,
+  type WAVersion,
   type WASocket,
 } from "baileys";
 import type { Logger } from "pino";
@@ -32,6 +33,9 @@ export type ConnectionDeps = {
   onSocket: (sock: WASocket) => void;
   /** Baileys factory, injectable so tests never open a websocket. */
   makeSocket?: typeof import("baileys").makeWASocket | undefined;
+  /** WhatsApp Web version to advertise. Baileys' bundled default goes stale, and a stale one gets
+   * pairing codes issued that the phone can never complete (WhiskeySockets/Baileys#2679). */
+  version?: WAVersion | undefined;
 };
 
 export type WhatsAppConnection = {
@@ -173,6 +177,7 @@ export function makeConnection(deps: ConnectionDeps): WhatsAppConnection {
         logger,
         printQRInTerminal: false,
         markOnlineOnConnect: false, // ban-risk mitigation from the spec
+        ...(deps.version && { version: deps.version }),
         // 🔴 `Chrome`, never `Desktop`, and this is load-bearing rather than cosmetic. Baileys
         // sends `companion_platform_display` as `${browser[1]} (${browser[0]})`, and WhatsApp
         // validates that string strictly for the pairing-code IQ — it does not for QR
