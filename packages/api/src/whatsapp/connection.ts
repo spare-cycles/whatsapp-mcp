@@ -8,6 +8,7 @@ import {
   type WAVersion,
   type WASocket,
 } from "baileys";
+import { rmSync, writeFileSync } from "node:fs";
 import type { Logger } from "pino";
 import type { Config } from "../config.js";
 import type { AuthStore } from "../db/auth-state.js";
@@ -226,7 +227,8 @@ export function makeConnection(deps: ConnectionDeps): WhatsAppConnection {
       touch();
 
       if (update.qr !== undefined) {
-        // Only that a QR was offered is passed on, never the payload itself — see `handleQr`.
+        // The payload goes to the 0600 file and nowhere else: never a log line, never `handleQr`.
+        if (config.qrFile !== undefined) writeFileSync(config.qrFile, update.qr, { mode: 0o600 });
         handleQr(newSock);
       }
 
@@ -239,6 +241,7 @@ export function makeConnection(deps: ConnectionDeps): WhatsAppConnection {
   }
 
   function handleOpen(openedSock: WASocket): void {
+    if (config.qrFile !== undefined) rmSync(config.qrFile, { force: true });
     attempts = 0;
     lastConnectedAt = nowSec();
     selfId = openedSock.user?.id ?? null;
@@ -251,6 +254,10 @@ export function makeConnection(deps: ConnectionDeps): WhatsAppConnection {
    * comment inside, and `requestPairingCode`'s catch.
    */
   function handleQr(activeSock: WASocket): void {
+    if (config.qrFile !== undefined) {
+      setState("pairing");
+      return;
+    }
     if (config.phoneNumber === undefined) {
       // Pairing is by code only (no rendered QR): without WHATSAPP_PHONE_NUMBER this deployment sits in
       // `pairing` forever with nothing to act on. Say so loudly, but only once per socket — the QR
