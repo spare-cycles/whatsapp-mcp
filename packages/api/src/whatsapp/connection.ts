@@ -151,13 +151,14 @@ export function makeConnection(deps: ConnectionDeps): WhatsAppConnection {
    * and parks the server in `logged_out` without a retry. Every unclaimed code therefore cost a
    * manual restart, and the pod that was waiting looked healthy the whole time.
    *
-   * `creds.registered` is the honest signal: Baileys sets it only once pairing has completed. When
-   * it is false there is by definition no session to protect, so `clear()` — which regenerates the
-   * keys in place as well as deleting the rows — is safe and is what puts the next socket back on
-   * the registration path.
+   * `creds.registered` is the honest signal for a code: Baileys sets it only once code pairing has
+   * completed. A QR pairing never sets it — `pair-success` writes `creds.account` instead — so
+   * either one means a real session. When both are absent there is by definition no session to
+   * protect, so `clear()` — which regenerates the keys in place as well as deleting the rows — is
+   * safe and is what puts the next socket back on the registration path.
    */
   function discardUnregisteredIdentity(): void {
-    if (auth.state.creds.registered) return;
+    if (auth.state.creds.registered || auth.state.creds.account) return;
     if (auth.state.creds.me === undefined) return;
     logger.info("whatsapp: discarding the unregistered identity left behind by an unclaimed pairing code");
     auth.clear();
